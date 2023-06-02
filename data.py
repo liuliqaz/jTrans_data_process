@@ -19,10 +19,19 @@ vocab_data = open("./jtrans_tokenizer/vocab.txt").read().strip().split("\n") + [
 my_vocab = defaultdict(lambda: 512, {vocab_data[i] : i for i in range(len(vocab_data))})
 
 
+def help_tokenize_blk_list(blk_list):
+    res_list = []
+    for blk in blk_list:
+        res_list.append(help_tokenize(blk))
+    return res_list
+
 def help_tokenize(line):
     global my_vocab
     ret = {}
-    split_line = line.strip().split(' ')
+    if isinstance(line, list):
+        split_line = line
+    else:
+        split_line = line.strip().split(' ')
     split_line_len = len(split_line)
     if split_line_len <= 509:
         split_line = ['[CLS]']+split_line+['[SEP]']
@@ -106,7 +115,7 @@ def gen_funcstr(f, convert_jump):
     return func_str, paragraphs_str
 
 
-def gen_funcstr_old(f,convert_jump):
+def gen_funcstr_old(f, convert_jump):
     cfg=f[3]
     #print(hex(f[0]))
     bb_ls,code_lst,map_id=[],[],{}
@@ -178,123 +187,79 @@ def load_unpair_data(datapath, filt=None, alldata=True, convert_jump=True, opt=N
         #     paragraph_file.write(paragraphs_str + '\n')
 
 
-def load_paired_data(datapath, filt=None, alldata=True, convert_jump=True, opt=None, add_ebd=False):
-   
+def load_paired_data(datapath, filt=None, alldata=True, convert_jump=True, opt=None):
     dataset = DatasetBase(datapath, filt, alldata, opt=opt)
     functions = []
     func_emb_data = []
     SUM = 0
     for i in dataset.get_paired_data_iter():  #proj, func_name, func_addr, asm_list, rawbytes_list, cfg, bai_featrue
         functions.append([])
-        if add_ebd:
-            func_emb_data.append({'proj': i[0], 'funcname': i[1]})
+        func_emb_data.append({'proj': i[0], 'funcname': i[1]})
         for o in opt:
             if i[2].get(o):
                 '''
                 add graph process here
                 '''
                 f = i[2][o]
-
                 cfg = f[3]
-                gen_edge_pair(cfg)
-
-                func_str = gen_funcstr_old(f, convert_jump)
-                if len(func_str) > 0:
-                    if add_ebd:
-                        func_emb_data[-1][o] = len(functions[-1])
-                    functions[-1].append(func_str)
+                blk_list, edge_list = gen_blocks_edges(cfg)
+                if len(blk_list) > 0:
+                    SUM += 1
+                    func_emb_data[-1][o] = len(functions[-1])
+                    functions[-1].append((blk_list, edge_list))
                     SUM += 1
 
     print('TOTAL ', SUM)
     return functions, func_emb_data
 
 
-def gen_edge_pair(cfg):
+def gen_blocks_edges(cfg):
     # print(hex(f[0]))
-    bb_ls, code_lst, map_id = [], [], {}
-    block_id = {}
+    bb_ls = []
+    block_id_map = {}
     for bb in cfg.nodes:
         bb_ls.append(bb)
     bb_ls.sort()
 
     for idx, block in enumerate(bb_ls):
-        block_id[block] = idx
+        block_id_map[block] = idx
+
+    block_asm_map = {}
     for bx in range(len(bb_ls)):
         bb = bb_ls[bx]
         asm = cfg.nodes[bb]['asm']
-        map_id[bb] = len(code_lst)
-
+        temp_asm = []
         for code in asm:
             operator, operand1, operand2, operand3, annotation = readidadata.parse_asm(code)
-            code_lst.append(operator)
+            temp_asm.append(operator)
             if operand1 is not None:
-                code_lst.append(operand1)
+                temp_asm.append(operand1)
             if operand2 is not None:
-                code_lst.append(operand2)
+                temp_asm.append(operand2)
             if operand3 is not None:
-                code_lst.append(operand3)
-    for c in range(len(code_lst)):
-        op = code_lst[c]
-        if op.startswith('hex_'):
-            jumpaddr = int(op[4:], base=16)
-            if block_id.get(jumpaddr):
-                jumpid = block_id[jumpaddr]
-                if jumpid < MAXLEN:
-                    code_lst[c] = 'JUMP_ADDR_{}'.format(jumpid)
+                temp_asm.append(operand3)
+        block_asm_map[bb] = temp_asm
+    for b_addr, block in block_asm_map.items():
+        for c in range(len(block)):
+            op = block[c]
+            if op.startswith('hex_'):
+                jumpaddr = int(op[4:], base=16)
+                if block_id_map.get(jumpaddr):
+                    jumpid = block_id_map[jumpaddr]
+                    if jumpid < MAXLEN:
+                        block[c] = 'JUMP_ADDR_{}'.format(jumpid)
+                    else:
+                        block[c] = 'JUMP_ADDR_EXCEEDED'
                 else:
-                    code_lst[c] = 'JUMP_ADDR_EXCEEDED'
-            else:
-                code_lst[c] = 'UNK_JUMP_ADDR'
+                    block[c] = 'UNK_JUMP_ADDR'
+    edge_list = []
+    for edge in cfg.edges:
+        edge_list.append([block_id_map[edge[0]], block_id_map[edge[1]]])
 
-
-    pass
-
-
-#binary version dataset
-class FunctionDataset_CL(torch.utils.data.Dataset):
-    def __init__(self, tokenizer, path='../BinaryCorp/extract', filt=None, alldata=True, convert_jump_addr=True,opt=None,add_ebd=True):  #random visit
-        functions, ebds = load_paired_data(datapath=path, filt=filt, alldata=alldata, convert_jump=convert_jump_addr, opt=opt, add_ebd=add_ebd)
-        self.datas = functions
-        self.ebds = ebds
-        self.tokenizer = tokenizer
-        self.opt = opt
-        self.convert_jump_addr = True
-
-    def __getitem__(self, idx):             #also return bad pair
-        pairs = self.datas[idx]
-        if self.opt is None:
-            pos = random.randint(0,len(pairs)-1)
-            pos2 = random.randint(0,len(pairs)-1)
-            while  pos2 == pos:
-                pos2 = random.randint(0, len(pairs)-1)
-            f1 = pairs[pos]   #give three pairs
-            f2 = pairs[pos2]
-        else:
-            pos = 0
-            pos2 = 1
-            f1 = pairs[pos]
-            f2 = pairs[pos2]
-        ftype=random.randint(0,len(self.datas)-1)
-        while ftype == idx:
-            ftype = random.randint(0,len(self.datas)-1)
-        pair_opp = self.datas[ftype]
-        pos3=random.randint(0,len(pair_opp)-1)
-        f3=pair_opp[pos3]
-        ret1 = help_tokenize(f1)
-        token_seq1=ret1['input_ids']
-        mask1=ret1['attention_mask']
-
-        ret2 = help_tokenize(f2)
-        token_seq2=ret2['input_ids']
-        mask2=ret2['attention_mask']
-
-        ret3 = help_tokenize(f3)
-        token_seq3=ret3['input_ids']
-        mask3=ret3['attention_mask']
-
-        return token_seq1,token_seq2,token_seq3,mask1,mask2,mask3
-    def __len__(self):
-        return len(self.datas)
+    block_asm_list = ['' for _ in range(len(bb_ls))]
+    for blk_addr, idx in block_id_map.items():
+        block_asm_list[idx] = block_asm_map[blk_addr]
+    return block_asm_list, edge_list
 
 
 class FunctionDataset_CL_Load(torch.utils.data.Dataset): #binary version dataset
@@ -303,53 +268,42 @@ class FunctionDataset_CL_Load(torch.utils.data.Dataset): #binary version dataset
             start = time.time()
             self.datas = pickle.load(open(load, 'rb'))
             print('load time:', time.time() - start)
-            self.tokenizer=tokenizer
-            self.opt=opt
-            self.convert_jump_addr=True
+            self.tokenizer = tokenizer
+            self.opt = opt
+            self.convert_jump_addr = True
         else:
-            functions,ebds=load_paired_data(datapath=path,filt=filt,alldata=alldata,convert_jump=convert_jump_addr,opt=opt,add_ebd=add_ebd)
+            functions, func_ebeds = load_paired_data(datapath=path,filt=filt,alldata=alldata,convert_jump=convert_jump_addr,opt=opt)
             self.datas=[]
             for func_list in functions:
                 tmp = []
                 for f in func_list:
-                    tmp.append(help_tokenize(f))
+                    tmp.append((help_tokenize_blk_list(f[0]), f[1]))
                 self.datas.append(tmp)
-            self.ebds=ebds
-            self.tokenizer=tokenizer
-            self.opt=opt
-            self.convert_jump_addr=True
-    def __getitem__(self, idx):             #also return bad pair
+            self.ebds = func_ebeds
+            self.tokenizer = tokenizer
+            self.opt = opt
+            self.convert_jump_addr = True
 
-        pairs=self.datas[idx]
-        if self.opt==None:
-            pos=random.randint(0,len(pairs)-1)
+    def __getitem__(self, idx):
+        pairs = self.datas[idx]
+        # get sim pair
+        pos = random.randint(0, len(pairs) - 1)
+        pos2 = random.randint(0, len(pairs) - 1)
+        while pos2 == pos:
             pos2=random.randint(0,len(pairs)-1)
-            while pos2==pos:
-                pos2=random.randint(0,len(pairs)-1)
-            f1=pairs[pos]   #give three pairs
-            f2=pairs[pos2]
-        else:
-            pos=0
-            pos2=1
-            f1=pairs[pos]
-            f2=pairs[pos2]
-        ftype=random.randint(0,len(self.datas)-1)
-        while ftype==idx:
-            ftype=random.randint(0,len(self.datas)-1)
-        pair_opp=self.datas[ftype]
-        pos3=random.randint(0,len(pair_opp)-1)
-        f3=pair_opp[pos3]
+        f1 = pairs[pos]   #give three pairs
+        f2 = pairs[pos2]
 
-        token_seq1=f1['input_ids']
-        mask1=f1['attention_mask']
+        # get un-sim pair
+        unsim_idx = random.randint(0, len(self.datas) - 1)
+        while unsim_idx == idx:
+            unsim_idx = random.randint(0,len(self.datas)-1)
+        unsim_pairs = self.datas[unsim_idx]
+        pos3 = random.randint(0, len(unsim_pairs)-1)
+        f3 = unsim_pairs[pos3]
 
-        token_seq2=f2['input_ids']
-        mask2=f2['attention_mask']
+        return f1, f2, f3
 
-        token_seq3=f3['input_ids']
-        mask3=f3['attention_mask']
-
-        return token_seq1,token_seq2,token_seq3,mask1,mask2,mask3
     def __len__(self):
         return len(self.datas)
 

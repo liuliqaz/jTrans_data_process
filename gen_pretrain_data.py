@@ -38,10 +38,8 @@ def help_tokenize(line):
     return ret
 
 
-def get_all_path(graph, start):
-    pass
-
-def gen_funcstr(f, convert_jump):
+# gen func_str(ins_1 ins_2...) and paragraph_str(block_1 \t block_2...)
+def gen_funcstr_parastr_for_pretrain(f, convert_jump):
     cfg = f[3]
     #print(hex(f[0]))
     bb_ls, code_lst, map_id = [], [], {}
@@ -110,7 +108,8 @@ def gen_funcstr(f, convert_jump):
     return func_str, paragraphs_str
 
 
-def gen_block_pair(f):
+# gen block pair for pretrain (block_1 [relate_token] block_2)
+def gen_block_pair_for_pretrain(f):
     cfg = f[3]
     # print(hex(f[0]))
     bb_ls, code_lst, map_id = [], [], {}
@@ -182,6 +181,10 @@ def gen_block_pair(f):
             edge_list.append(edge_str)
     return edge_list
 
+
+# gen
+def gen_graph_triple_for_finetune(f):
+    pass
 
 def gen_all_path(f):
     cfg = f[3]
@@ -286,7 +289,7 @@ def para_write_to_file(data_dir, proj_list, ph_f):
                 #     ph_f.write(paragraphs_str + '\n')
 
                 # -- dump as pairs --
-                edge_list = gen_block_pair(func_info)
+                edge_list = gen_block_pair_for_pretrain(func_info)
                 # if len(edge_list) > 0:
                 #     ph_f.writelines(edge_list)
 
