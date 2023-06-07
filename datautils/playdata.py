@@ -7,6 +7,7 @@ from tqdm import tqdm
 import pickle
 import argparse
 from functools import reduce
+import random
 
 class DatasetBase(object):
     def __init__(self, path, prefixfilter=None, all_data=True, opt=None):
@@ -83,6 +84,9 @@ class DatasetBase(object):
 
         for proj, pickle_path_dict in proj2pickle.items():
             if len(pickle_path_dict) < 2:
+                continue
+            prob = random.random()
+            if prob > 0.2:
                 continue
             function_list = []
             tmp_pickle_dict = {}

@@ -263,7 +263,7 @@ def gen_blocks_edges(cfg):
 
 
 class FunctionDataset_CL_Load(torch.utils.data.Dataset): #binary version dataset
-    def __init__(self,tokenizer, path='../BinaryCorp/extract',filt=None,alldata=True,convert_jump_addr=True,opt=None,add_ebd=True, load=None):  #random visit
+    def __init__(self,tokenizer, path='../BinaryCorp/extract',filt=None,alldata=True,convert_jump_addr=True,opt=None,load=None,need_tokenize=False):  #random visit
         if load:
             start = time.time()
             self.datas = pickle.load(open(load, 'rb'))
@@ -274,11 +274,14 @@ class FunctionDataset_CL_Load(torch.utils.data.Dataset): #binary version dataset
         else:
             functions, func_ebeds = load_paired_data(datapath=path,filt=filt,alldata=alldata,convert_jump=convert_jump_addr,opt=opt)
             self.datas=[]
-            for func_list in functions:
-                tmp = []
-                for f in func_list:
-                    tmp.append((help_tokenize_blk_list(f[0]), f[1]))
-                self.datas.append(tmp)
+            if need_tokenize:
+                for func_list in functions:
+                    tmp = []
+                    for f in func_list:
+                        tmp.append((help_tokenize_blk_list(f[0]), f[1]))
+                    self.datas.append(tmp)
+            else:
+                self.datas=functions
             self.ebds = func_ebeds
             self.tokenizer = tokenizer
             self.opt = opt
@@ -290,7 +293,7 @@ class FunctionDataset_CL_Load(torch.utils.data.Dataset): #binary version dataset
         pos = random.randint(0, len(pairs) - 1)
         pos2 = random.randint(0, len(pairs) - 1)
         while pos2 == pos:
-            pos2=random.randint(0,len(pairs)-1)
+            pos2 = random.randint(0,len(pairs)-1)
         f1 = pairs[pos]   #give three pairs
         f2 = pairs[pos2]
 
