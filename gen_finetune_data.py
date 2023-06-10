@@ -105,11 +105,56 @@ def gen_data(function, model, vocab, device):
     return ret_data
 
 
+def gen_prepared_data(function, vocab):
+    block_asm_list = function[0]
+    edge_pair_list = function[1]
+
+    block_batch = [block for block in block_asm_list]
+    block_batch_p = gen_prepared_block_edge_feat(block_batch, vocab)
+
+    edge_batch_p = torch.tensor([])
+    if len(edge_pair_list) > 0:
+        edge_batch = [(block_asm_list[edge[0]], block_asm_list[edge[1]]) for edge in edge_pair_list]
+        edge_batch_p = gen_prepared_block_edge_feat(edge_batch, vocab, is_edge_pair=True)
+
+    res_data = (block_batch_p, edge_pair_list, edge_batch_p)
+    return res_data
+
+
+def gen_prepared_block_edge_feat(batch, vocab, is_edge_pair=False):
+    bert_input_batch = []
+    segment_label_batch = []
+    for b in batch:
+        if is_edge_pair:
+            e = b
+            t1 = [vocab.sos_index] + [vocab.stoi.get(ins, vocab.unk_index) for ins in e[0]] + [vocab.eos_index]
+            t2 = [vocab.stoi.get(ins, vocab.unk_index) for ins in e[1]] + [vocab.eos_index]
+            segment_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])[:MAX_LEN]
+            bert_input = (t1 + t2)[:MAX_LEN]
+        else:
+            t1 = [vocab.sos_index] + [vocab.stoi.get(ins, vocab.unk_index) for ins in b] + [vocab.eos_index]
+            segment_label = [1 for _ in range(len(t1))][:MAX_LEN]
+            bert_input = t1[:MAX_LEN]
+        padding = [vocab.pad_index for _ in range(MAX_LEN - len(bert_input))]
+        bert_input.extend(padding)
+        segment_label.extend(padding)
+
+        bert_input_batch.append(torch.tensor(bert_input))
+        segment_label_batch.append(torch.tensor(segment_label))
+
+    bert_input_batch = torch.stack(bert_input_batch)
+    segment_label_batch = torch.stack(segment_label_batch)
+
+    res = (bert_input_batch, segment_label_batch)
+
+    return res
+
+
 if __name__ == '__main__':
     device = torch.device('cuda')
 
-    # train_path = './datautils/extract'
-    train_path = '../jTrans/data/extract'
+    train_path = './datautils/extract'
+    # train_path = '../jTrans/data/extract'
 
     tokenizer = './jtrans_tokenizer'
     load_train, load_test = False, False
@@ -130,21 +175,26 @@ if __name__ == '__main__':
         # f_data = gen_data(f, bert, vocab, device)
         # g_sim_data = gen_data(g_sim, bert, vocab, device)
         # g_unsim_data = gen_data(g_unsim, bert, vocab, device)
-        #
-        # triple_train_list.append((f_data, g_sim_data, g_unsim_data))
 
-        triple_train_list.append((f, g_sim, g_unsim))
+        # prepare data
+        f_data = gen_prepared_data(f, vocab)
+        g_sim_data = gen_prepared_data(g_sim, vocab)
+        g_unsim_data = gen_prepared_data(g_unsim, vocab)
 
-        if len(triple_train_list) == 1000:
-            if os.path.exists('./data/person.pkl'):
-                with open('./data/person.pkl', 'ab') as f:
-                    pickle.dump(triple_train_list, f)
-            else:
-                with open('./data/person.pkl', 'wb') as f:
-                    pickle.dump(triple_train_list, f)
-            triple_train_list = []
+        triple_train_list.append((f_data, g_sim_data, g_unsim_data))
 
-    with open('./data/person.pkl', 'ab') as f:
+        # triple_train_list.append((f, g_sim, g_unsim))
+
+        # if len(triple_train_list) == 25:
+        #     if os.path.exists('./data/raw_1.pkl'):
+        #         with open('./data/raw_1.pkl', 'ab') as f:
+        #             pickle.dump(triple_train_list, f)
+        #     else:
+        #         with open('./data/raw_1.pkl', 'wb') as f:
+        #             pickle.dump(triple_train_list, f)
+        #     triple_train_list = []
+
+    with open('./data/raw_fine.pkl', 'wb') as f:
         pickle.dump(triple_train_list, f)
 
 
