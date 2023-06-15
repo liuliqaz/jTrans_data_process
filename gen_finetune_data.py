@@ -151,15 +151,15 @@ def gen_prepared_block_edge_feat(batch, vocab, is_edge_pair=False):
 
 
 if __name__ == '__main__':
-    device = torch.device('cuda')
+    device = torch.device('cuda:0')
 
-    train_path = './datautils/extract'
-    # train_path = '../jTrans/data/extract'
+    # train_path = './datautils/extract'
+    train_path = '/home/liu/bcsd/extract'
 
-    tokenizer = './jtrans_tokenizer'
     load_train, load_test = False, False
-    tokenizer = BertTokenizer.from_pretrained(tokenizer)
-    ft_train_dataset = FunctionDataset_CL_Load(tokenizer, train_path, convert_jump_addr=True, load=load_train, opt=['O0', 'O1', 'O2', 'O3', 'Os'])
+    # tokenizer = './jtrans_tokenizer'
+    # tokenizer = BertTokenizer.from_pretrained(tokenizer)
+    ft_train_dataset = FunctionDataset_CL_Load(None, train_path, convert_jump_addr=True, load=load_train, opt=['O0', 'O1', 'O2', 'O3', 'Os'])
 
     vocab_path = './data/jtrans_x86.pkl'
     vocab = WordVocab.load_vocab(vocab_path)
