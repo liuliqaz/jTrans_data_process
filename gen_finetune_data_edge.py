@@ -3,6 +3,11 @@ import os
 import argparse
 import re
 from tqdm import tqdm
+import random
+import numpy as np
+import math
+
+MAX_LOOP_TIME = 100
 
 
 def load_pickle(file):
@@ -45,6 +50,51 @@ def is_hexadecimal(s):
         return True
     except ValueError:
         return False
+
+
+def calculate_levenshtein_distance(text1, text2):
+    m, n = len(text1), len(text2)
+    dp = np.zeros((m + 1, n + 1))
+
+    for i in range(m + 1):
+        dp[i][0] = i
+    for j in range(n + 1):
+        dp[0][j] = j
+
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if text1[i - 1] == text2[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1]
+            else:
+                dp[i][j] = min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]) + 1
+
+    return dp[m][n]
+
+
+def get_rand_unsim_opt(target_opt, opt_list):
+    rand_opt_list = opt_list.copy()
+    unsim_opt = ""
+    for opt in rand_opt_list:
+        if opt == target_opt:
+            continue
+        if calculate_levenshtein_distance(target_opt, opt) >= 5:
+            unsim_opt = opt
+            break
+        unsim_opt = opt
+    if unsim_opt == '':
+        print('debug')
+    return unsim_opt
+
+
+def get_arch_emb(arch):
+    if 'x86' in arch:
+        return 0
+    if 'arm' in arch:
+        return 1
+    if 'mips' in arch:
+        return 2
+    print(f'[!]unkown arch, arch={arch}')
+    return -1
 
 
 def process_asm_x86(basic_blocks, func_dict, dyn_func_list, func_name):
@@ -209,7 +259,7 @@ def process_asm(arch, func_dict, dyn_func_list, binary_name):
         tmp_node_id_dict = {}
         # new_node_list has same index as node_list
         for idx, node in enumerate(node_list):
-            new_node_list.append(asm_dict[node])
+            new_node_list.append(' '.join(asm_dict[node]))
             tmp_node_id_dict[node] = idx
         # use index of new node list present edge
         for edge in edge_list:
@@ -248,11 +298,15 @@ def process_and_gather_data(data_dir, outpur_dir):
 
     progress_bar = tqdm(range(total_len))
 
+    res_list = []
+    save_path = os.path.join(outpur_dir, 'finetune_triple_list.pkl')
+
     for proj_bin, file_tuple_list in proj_bin_dict.items():
-        save_file_name = os.path.join(outpur_dir, f'{proj_bin}_index.pkl')
+        # save_file_name = os.path.join(outpur_dir, f'{proj_bin}_index.pkl')
         
         proj_bin_func_set = set()   # save common function name
         proj_bin_opt_dict = dict()  # save {func_name:{opt1:{info}, opt2:{info}}}
+
         # traverse every arch_opt
         for file_tuple in file_tuple_list:
             file_name = file_tuple[0]
@@ -273,6 +327,7 @@ def process_and_gather_data(data_dir, outpur_dir):
                 opt_map = {
                     'edges': func_dict[func_addr]['edges'],
                     'nodes': func_dict[func_addr]['nodes'],
+                    'arch': get_arch_emb(arch_opt)
                 }
                 # if 'mips' in arch_opt and func_name[-2:] == '_0':
                 #     func_name = func_name[:-2]
@@ -288,24 +343,69 @@ def process_and_gather_data(data_dir, outpur_dir):
             
             progress_bar.update(1)
 
+        # generate triple dataset {[target, sim, dis-sim], [], ...}
+        for func_name, func_opt_dict in proj_bin_opt_dict.items():
+            if len(func_opt_dict) < 2:
+                continue
+
+            sample_num = math.ceil(len(func_opt_dict)/3)
+            target_opt_list = random.sample(list(func_opt_dict.keys()), sample_num)
+
+            for target_opt in target_opt_list:
+                # get most unsim opt from all opt as sim sample
+                sim_func_opt = get_rand_unsim_opt(target_opt, list(func_opt_dict.keys()))
+                dis_sim_func_name = random.choice(list(proj_bin_opt_dict.keys()))
+                loop_time = 0
+                # get the another func with same opt as dis-sim sample
+                while loop_time < MAX_LOOP_TIME :
+                    if dis_sim_func_name != func_name and target_opt in proj_bin_opt_dict[dis_sim_func_name].keys():
+                        tmp_target_data = func_opt_dict[target_opt]
+                        tmp_dis_sim_data = proj_bin_opt_dict[dis_sim_func_name][target_opt]
+                        if len(tmp_target_data['nodes']) == 1 and len(tmp_dis_sim_data['nodes']) == 1 and tmp_target_data['nodes'][0] == tmp_dis_sim_data['nodes'][0]:
+                            dis_sim_func_name = random.choice(list(proj_bin_opt_dict.keys()))
+                            loop_time += 1
+                            continue
+                        break
+                    dis_sim_func_name = random.choice(list(proj_bin_opt_dict.keys()))
+                    loop_time += 1
+                # if search many times no result, emit this sample
+                if loop_time >= MAX_LOOP_TIME:
+                    print(f'[!]search unsim func loop time over {MAX_LOOP_TIME}')
+                    continue
+                
+                target_data = func_opt_dict[target_opt]
+                sim_data = func_opt_dict[sim_func_opt]
+                dis_sim_data = proj_bin_opt_dict[dis_sim_func_name][target_opt]
+
+                if len(target_data['nodes']) == 1 and len(dis_sim_data['nodes']) == 1:
+                    if target_data['nodes'][0] == dis_sim_data['nodes'][0]:
+                        continue
+
+                res_list.append([target_data, sim_data, dis_sim_data])
+
         # with open(save_file_name, 'wb') as f:
         #     pickle.dump(proj_bin_opt_dict, f)
-                    
+
+    with open(save_path, 'wb') as f:
+        pickle.dump(res_list, f)                    
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="gather project, bin_file, functions & generate finetune data.")
-    parser.add_argument("--input_path", type=str, default='/home/liu/bcsd/train_set_extract')
-    parser.add_argument("--output_path", type=str, default='/home/liu/bcsd/datasets/edge_gnn_datas/pretrain.txt')
+    parser.add_argument("--input_path", type=str, default='/home/liu/bcsd/train_set_extract_v2')
+    parser.add_argument("--output_path", type=str, default='/home/liu/bcsd/datasets/edge_gnn_datas/')
     args = parser.parse_args()
 
     input_path = args.input_path
     output_path = args.output_path
 
+    # test use
     input_path = '/home/liu/project/ida_script/extract'
     output_path = './data'
+
     process_and_gather_data(input_path, output_path)
 
-    # data = load_pickle('./data/raw_fine_small.pkl')
+    # data = load_pickle('./data/finetune_triple_list.pkl')
 
     print('done')
 
