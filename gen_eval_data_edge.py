@@ -298,13 +298,11 @@ def process_and_gather_data(data_dir, outpur_dir):
 
     progress_bar = tqdm(range(total_len))
 
-    res_list = []
-    save_path = os.path.join(outpur_dir, 'finetune_triple_list.pkl')
+    save_path = os.path.join(outpur_dir, 'eval_func_list.pkl')
+    res_dict = {} 
 
     for proj_bin, file_tuple_list in proj_bin_dict.items():
-        # save_file_name = os.path.join(outpur_dir, f'{proj_bin}_index.pkl')
-        
-        proj_bin_func_set = set()   # save common function name
+
         proj_bin_opt_dict = dict()  # save {func_name:{opt1:{info}, opt2:{info}}}
 
         # traverse every arch_opt
@@ -327,78 +325,21 @@ def process_and_gather_data(data_dir, outpur_dir):
                 opt_map = {
                     'edges': func_dict[func_addr]['edges'],
                     'nodes': func_dict[func_addr]['nodes'],
-                    'arch': get_arch_emb(arch_opt)
+                    'arch':  get_arch_emb(arch_opt),
                 }
-                # if 'mips' in arch_opt and func_name[-2:] == '_0':
-                #     func_name = func_name[:-2]
-                if func_name not in proj_bin_opt_dict:
-                    proj_bin_opt_dict[func_name] = {arch_opt: opt_map}
+                if f'{proj_bin}_{func_name}' not in res_dict:
+                    res_dict[f'{proj_bin}_{func_name}'] = {arch_opt: opt_map}
                 else:    
-                    proj_bin_opt_dict[func_name][arch_opt] = opt_map
-
-            if len(proj_bin_func_set) == 0:
-                proj_bin_func_set.update(func_map.keys())
-            else:
-                proj_bin_func_set &= set(func_map.keys())
+                    res_dict[f'{proj_bin}_{func_name}'][arch_opt] = opt_map
             
             progress_bar.update(1)
 
-        # generate triple dataset {[target, sim, dis-sim], [], ...}
-        for func_name, func_opt_dict in proj_bin_opt_dict.items():
-            if len(func_opt_dict) < 2:
-                continue
-
-            sample_num = math.ceil(len(func_opt_dict)/3)
-            target_opt_list = random.sample(list(func_opt_dict.keys()), sample_num)
-
-            for target_opt in target_opt_list:
-                # get most unsim opt from all opt as sim sample
-                sim_func_opt = get_rand_unsim_opt(target_opt, list(func_opt_dict.keys()))
-                dis_sim_func_name = random.choice(list(proj_bin_opt_dict.keys()))
-                loop_time = 0
-                # get the another func with same opt as dis-sim sample
-                while loop_time < MAX_LOOP_TIME :
-                    if dis_sim_func_name != func_name and target_opt in proj_bin_opt_dict[dis_sim_func_name].keys():
-                        tmp_target_data = func_opt_dict[target_opt]
-                        tmp_dis_sim_data = proj_bin_opt_dict[dis_sim_func_name][target_opt]
-                        if len(tmp_target_data['nodes']) == 1 and len(tmp_dis_sim_data['nodes']) == 1 and tmp_target_data['nodes'][0] == tmp_dis_sim_data['nodes'][0]:
-                            dis_sim_func_name = random.choice(list(proj_bin_opt_dict.keys()))
-                            loop_time += 1
-                            continue
-                        break
-                    dis_sim_func_name = random.choice(list(proj_bin_opt_dict.keys()))
-                    loop_time += 1
-                # if search many times no result, emit this sample
-                if loop_time >= MAX_LOOP_TIME:
-                    print(f'[!]search unsim func loop time over {MAX_LOOP_TIME}')
-                    continue
-                
-                target_data = func_opt_dict[target_opt]
-                sim_data = func_opt_dict[sim_func_opt]
-                dis_sim_data = proj_bin_opt_dict[dis_sim_func_name][target_opt]
-
-                if len(target_data['nodes']) == 1 and len(dis_sim_data['nodes']) == 1:
-                    if target_data['nodes'][0] == dis_sim_data['nodes'][0]:
-                        continue
-
-                res_list.append([target_data, sim_data, dis_sim_data])
-                # res_list.append(
-                #     {
-                #         "target": target_data, 
-                #         "sim": sim_data, 
-                #         "unsim": dis_sim_data
-                #     }
-                # )
-
-        # with open(save_file_name, 'wb') as f:
-        #     pickle.dump(proj_bin_opt_dict, f)
-
     with open(save_path, 'wb') as f:
-        pickle.dump(res_list, f)                    
+        pickle.dump(res_dict, f)                    
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="gather project, bin_file, functions & generate finetune data.")
+    parser = argparse.ArgumentParser(description="gather project, bin_file, functions & generate evaluate data.")
     parser.add_argument("--input_path", type=str, default='/home/liu/bcsd/train_set_extract_v2')
     parser.add_argument("--output_path", type=str, default='/home/liu/bcsd/datasets/edge_gnn_datas/')
     args = parser.parse_args()
