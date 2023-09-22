@@ -83,8 +83,19 @@ def get_rand_unsim_opt(target_opt, opt_list):
             break
         unsim_opt = opt
     if unsim_opt == '':
-        print('debug')
+        print('[!]debug: empty opt')
     return unsim_opt
+
+
+def get_most_unlike_opt(opt_list):
+    res_list = []
+    target_opt_list = random.sample(opt_list, int(len(opt_list)/2))
+
+    for target_opt in target_opt_list:
+        another_opt = get_rand_unsim_opt(target_opt, list(opt_list))
+        res_list.append((target_opt, another_opt))
+
+    return res_list
 
 
 def get_arch_emb(arch):
@@ -293,14 +304,14 @@ def gather_pkl_file_name(data_dir):
     return proj_bin_dict, pkl_file_len
 
 
-def process_and_gather_data_triple(data_dir, outpur_dir):
+def process_and_gather_data_triple(data_dir, outpur_dir, pkl_name, is_random=False):
     # get all file dict {proj_bin:[(file_name, arch_opt)]}
     proj_bin_dict, total_len = gather_pkl_file_name(data_dir)
 
     progress_bar = tqdm(range(total_len))
 
     res_list = []
-    save_path = os.path.join(outpur_dir, 'finetune_triple_list.pkl')
+    save_path = os.path.join(outpur_dir, pkl_name)
 
     for proj_bin, file_tuple_list in proj_bin_dict.items():
         # save_file_name = os.path.join(outpur_dir, f'{proj_bin}_index.pkl')
@@ -349,7 +360,11 @@ def process_and_gather_data_triple(data_dir, outpur_dir):
             if len(func_opt_dict) < 2:
                 continue
 
+            # full opt pairs
             all_sim_pairs = list(itertools.combinations(func_opt_dict.keys(), 2))
+            if is_random:
+                # minst opt pairs dataset
+                all_sim_pairs = get_most_unlike_opt(func_opt_dict.keys())
 
             for sim_pair in all_sim_pairs:
                 choice_idx = random.choice([0,1])
@@ -399,14 +414,14 @@ def process_and_gather_data_triple(data_dir, outpur_dir):
         pickle.dump(res_list, f)                    
 
 
-def process_and_gather_data_pair(data_dir, outpur_dir):
+def process_and_gather_data_pair(data_dir, outpur_dir, pkl_name, is_random=False):
     # get all file dict {proj_bin:[(file_name, arch_opt)]}
     proj_bin_dict, total_len = gather_pkl_file_name(data_dir)
 
     progress_bar = tqdm(range(total_len))
 
     res_list = []
-    save_path = os.path.join(outpur_dir, 'finetune_pair_with_label_list.pkl')
+    save_path = os.path.join(outpur_dir, pkl_name)
 
     for proj_bin, file_tuple_list in proj_bin_dict.items():
         # save_file_name = os.path.join(outpur_dir, f'{proj_bin}_index.pkl')
@@ -455,7 +470,11 @@ def process_and_gather_data_pair(data_dir, outpur_dir):
             if len(func_opt_dict) < 2:
                 continue
             
+            # full opt pairs
             all_sim_pairs = list(itertools.combinations(func_opt_dict.keys(), 2))
+            if is_random:
+                # minst opt pairs dataset
+                all_sim_pairs = get_most_unlike_opt(func_opt_dict.keys())
             
             for sim_pair in all_sim_pairs:
                 choice_idx = random.choice([0,1])
@@ -509,9 +528,13 @@ if __name__ == '__main__':
     input_path = '/home/liu/project/ida_script/extract'
     output_path = './data'
 
-    # process_and_gather_data_triple(input_path, output_path)
+    triple_name ='finetune_triple_rand.pkl'
+    pair_name= 'finetune_pair_rand.pkl'
 
-    data = load_pickle('./data/finetune_triple_list.pkl')
+    # process_and_gather_data_triple(input_path, output_path, 'finetune_triple_rand.pkl', True)
+    # process_and_gather_data_pair(input_path, output_path, 'finetune_pair_rand.pkl', True)
+
+    data = load_pickle(f'./data/{triple_name}')
 
     print('done')
 
