@@ -10,6 +10,10 @@ import itertools
 
 MAX_LOOP_TIME = 100
 
+node_cnt_x = 0
+edge_cnt_x = 0
+MAX_NODE_EDGE_LEN = 100
+
 
 def load_pickle(file):
     with open(file, 'rb') as f:
@@ -324,6 +328,16 @@ def process_and_gather_data_triple(data_dir, outpur_dir, pkl_name, is_random=Fal
             file_name = file_tuple[0]
             arch_opt = file_tuple[1]
 
+            # remove compiler clang to reduce dataset size
+            # if arch_opt.split('_')[0] == 'clang':
+            #     progress_bar.update(1)
+            #     continue
+
+            # remove 64bit to reduce dataset size
+            # if arch_opt.split('_')[-2] == '64':
+            #     progress_bar.update(1)
+            #     continue
+
             binary_name = '_'.join(file_name[:-4].split('_')[:-1])
 
             file_path = os.path.join(data_dir, file_name)
@@ -336,6 +350,16 @@ def process_and_gather_data_triple(data_dir, outpur_dir, pkl_name, is_random=Fal
             pickle_data[binary_name]['func_map'] = func_map
 
             for func_name, func_addr in func_map.items():
+                # debug use, count node and edge > 160 funcs
+                if len(func_dict[func_addr]['nodes']) > MAX_NODE_EDGE_LEN:
+                    global node_cnt_x
+                    node_cnt_x += 1
+                    continue
+                if len(func_dict[func_addr]['edges']) > MAX_NODE_EDGE_LEN:
+                    global edge_cnt_x
+                    edge_cnt_x += 1
+                    continue
+
                 opt_map = {
                     'edges': func_dict[func_addr]['edges'],
                     'nodes': func_dict[func_addr]['nodes'],
@@ -434,6 +458,16 @@ def process_and_gather_data_pair(data_dir, outpur_dir, pkl_name, is_random=False
             file_name = file_tuple[0]
             arch_opt = file_tuple[1]
 
+             # remove compiler clang to reduce dataset size
+            # if arch_opt.split('_')[0] == 'clang':
+            #     progress_bar.update(1)
+            #     continue
+
+            # remove 64bit to reduce dataset size
+            # if arch_opt.split('_')[-2] == '64':
+            #     progress_bar.update(1)
+            #     continue
+
             binary_name = '_'.join(file_name[:-4].split('_')[:-1])
 
             file_path = os.path.join(data_dir, file_name)
@@ -446,6 +480,16 @@ def process_and_gather_data_pair(data_dir, outpur_dir, pkl_name, is_random=False
             pickle_data[binary_name]['func_map'] = func_map
 
             for func_name, func_addr in func_map.items():
+                # debug use, count node and edge > 160 funcs
+                if len(func_dict[func_addr]['nodes']) > MAX_NODE_EDGE_LEN:
+                    global node_cnt_x
+                    node_cnt_x += 1
+                    continue
+                if len(func_dict[func_addr]['edges']) > MAX_NODE_EDGE_LEN:
+                    global edge_cnt_x
+                    edge_cnt_x += 1
+                    continue
+
                 opt_map = {
                     'edges': func_dict[func_addr]['edges'],
                     'nodes': func_dict[func_addr]['nodes'],
@@ -528,13 +572,13 @@ if __name__ == '__main__':
     input_path = '/home/liu/project/ida_script/extract'
     output_path = './data'
 
-    triple_name ='finetune_triple_rand.pkl'
-    pair_name= 'finetune_pair_rand.pkl'
+    triple_name ='finetune_triple_max100.pkl'
+    pair_name= 'finetune_pair_max100.pkl'
 
-    # process_and_gather_data_triple(input_path, output_path, 'finetune_triple_rand.pkl', True)
-    # process_and_gather_data_pair(input_path, output_path, 'finetune_pair_rand.pkl', True)
+    # process_and_gather_data_triple(input_path, output_path, triple_name, False)
+    # process_and_gather_data_pair(input_path, output_path, pair_name, False)
 
-    data = load_pickle(f'./data/{triple_name}')
+    data_triple = load_pickle(f'./data/{triple_name}')
+    data_pair = load_pickle(f'./data/{pair_name}')
 
     print('done')
-
