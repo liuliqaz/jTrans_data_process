@@ -10,9 +10,17 @@ import itertools
 
 MAX_LOOP_TIME = 100
 
+MIN_NODE_LEN = 2
+MAX_NODE_LEN = 50
+MAX_EDGE_LEN = 100
+
+SAMPLE_NUM = 1000000
+
+FILTER_CLANG = False
+FILTER_64 = False
+
 node_cnt_x = 0
 edge_cnt_x = 0
-MAX_NODE_EDGE_LEN = 100
 
 
 def load_pickle(file):
@@ -329,14 +337,14 @@ def process_and_gather_data_triple(data_dir, outpur_dir, pkl_name, is_random=Fal
             arch_opt = file_tuple[1]
 
             # remove compiler clang to reduce dataset size
-            # if arch_opt.split('_')[0] == 'clang':
-            #     progress_bar.update(1)
-            #     continue
+            if FILTER_CLANG and arch_opt.split('_')[0] == 'clang':
+                progress_bar.update(1)
+                continue
 
             # remove 64bit to reduce dataset size
-            # if arch_opt.split('_')[-2] == '64':
-            #     progress_bar.update(1)
-            #     continue
+            if FILTER_64 and arch_opt.split('_')[-2] == '64':
+                progress_bar.update(1)
+                continue
 
             binary_name = '_'.join(file_name[:-4].split('_')[:-1])
 
@@ -351,11 +359,11 @@ def process_and_gather_data_triple(data_dir, outpur_dir, pkl_name, is_random=Fal
 
             for func_name, func_addr in func_map.items():
                 # debug use, count node and edge > 160 funcs
-                if len(func_dict[func_addr]['nodes']) > MAX_NODE_EDGE_LEN:
+                if len(func_dict[func_addr]['nodes']) > MAX_NODE_LEN or len(func_dict[func_addr]['nodes']) < MIN_NODE_LEN:
                     global node_cnt_x
                     node_cnt_x += 1
                     continue
-                if len(func_dict[func_addr]['edges']) > MAX_NODE_EDGE_LEN:
+                if len(func_dict[func_addr]['edges']) > MAX_EDGE_LEN:
                     global edge_cnt_x
                     edge_cnt_x += 1
                     continue
@@ -481,11 +489,11 @@ def process_and_gather_data_pair(data_dir, outpur_dir, pkl_name, is_random=False
 
             for func_name, func_addr in func_map.items():
                 # debug use, count node and edge > 160 funcs
-                if len(func_dict[func_addr]['nodes']) > MAX_NODE_EDGE_LEN:
+                if len(func_dict[func_addr]['nodes']) > MAX_NODE_LEN:
                     global node_cnt_x
                     node_cnt_x += 1
                     continue
-                if len(func_dict[func_addr]['edges']) > MAX_NODE_EDGE_LEN:
+                if len(func_dict[func_addr]['edges']) > MAX_EDGE_LEN:
                     global edge_cnt_x
                     edge_cnt_x += 1
                     continue
@@ -559,6 +567,13 @@ def process_and_gather_data_pair(data_dir, outpur_dir, pkl_name, is_random=False
         pickle.dump(res_list, f)                    
 
 
+
+def sample_dataset(datalist, sample_num, save_path):
+    sample_list = random.sample(datalist, sample_num)
+    with open(save_path, 'wb') as f:
+        pickle.dump(sample_list, f)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="gather project, bin_file, functions & generate finetune data.")
     parser.add_argument("--input_path", type=str, default='/home/liu/bcsd/train_set_extract_v2')
@@ -569,16 +584,22 @@ if __name__ == '__main__':
     output_path = args.output_path
 
     # test use
-    input_path = '/home/liu/project/ida_script/extract'
-    output_path = './data'
+    # input_path = '/home/liu/project/ida_script/extract'
+    # output_path = './data'
 
-    triple_name ='finetune_triple_max100.pkl'
-    pair_name= 'finetune_pair_max100.pkl'
+    triple_name ='finetune_triple_max50_min1_full_without_clang64.pkl'
+    # pair_name= 'finetune_pair_max100.pkl'
 
     # process_and_gather_data_triple(input_path, output_path, triple_name, False)
     # process_and_gather_data_pair(input_path, output_path, pair_name, False)
 
-    data_triple = load_pickle(f'./data/{triple_name}')
-    data_pair = load_pickle(f'./data/{pair_name}')
+    data_path = os.path.join(output_path, triple_name)
+    # data_triple = load_pickle(data_path)
+    # data_pair = load_pickle(f'./data/{pair_name}')
+
+    sample_path = os.path.join(output_path, 'finetune_triple_max50_min1_1M_without_clang64.pkl')
+    # sample_dataset(data_triple, SAMPLE_NUM, sample_path)
+    
+    small_data_triple = load_pickle('./data/finetune_triple_max100.pkl')
 
     print('done')
