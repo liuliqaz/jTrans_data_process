@@ -11,6 +11,8 @@ from transformers import AutoConfig, AutoTokenizer
 
 MAX_STEP = 50
 
+partition_i = 0
+
 class FinetuneDataset():
     def __init__(self, graph_list, model, device, tokenizer, max_seq_length):
         self.graphs = graph_list
@@ -52,31 +54,23 @@ class FinetuneDataset():
             nodes3 = self.gen_block_edge_feat_plus(unsim_nodes, unsim_func['arch'])
             edges3 = self.gen_block_edge_feat_plus(unsim_preds, unsim_func['arch'], is_pair=True, batch2=unsim_succs)
 
-            # res_list.append([
-            #     {
-            #         'node_feat': nodes1,
-            #         'edge_pairs': target_func['edges'],
-            #         'edge_feat': edges1,
-            #     },
-            #     {
-            #         'node_feat': nodes2,
-            #         'edge_pairs': sim_func['edges'],
-            #         'edge_feat': edges2,
-            #     },
-            #     {
-            #         'node_feat': nodes3,
-            #         'edge_pairs': unsim_func['edges'],
-            #         'edge_feat': edges3,
-            #     }])
             progress_bar.update(1)
 
             res_list.append(
                 [
                     (self.trans_tensor_to_list(nodes1), target_func['edges'], self.trans_tensor_to_list(edges1)),
                     (self.trans_tensor_to_list(nodes2), sim_func['edges'], self.trans_tensor_to_list(edges2)),
-                    (self.trans_tensor_to_list(nodes3), unsim_func['edges'], self.trans_tensor_to_list(edges3)),
+                    # (self.trans_tensor_to_list(nodes3), unsim_func['edges'], self.trans_tensor_to_list(edges3)), # when use cross entropy
                 ]
             )
+
+            # if len(res_list) == 10000:
+            #     global partition_i
+            #     save_path = f'/home/liu/bcsd/datasets/edge_gnn_datas/finetune_triple_tensor_5w_{partition_i}.pkl'
+            #     with open(save_path, 'wb') as f:
+            #         pickle.dump(res_list, f)
+            #     partition_i += 1
+            #     res_list = []
 
         return res_list
     
@@ -138,10 +132,10 @@ class FinetuneDataset():
 
 if __name__ == '__main__':
 
-    file = '/home/liu/bcsd/datasets/edge_gnn_datas/finetune_triple_max50_min1_full_without_clang64.pkl'
+    file = '/home/liu/bcsd/datasets/edge_gnn_datas/finetune_triple_max50_min1_full_sample1.pkl'
     with open(file, 'rb') as f:
         data =  pickle.load(f)
-    data = random.sample(data, 500000)
+    # data = random.sample(data, 500000)
 
     tokenizer_name = '/home/liu/bcsd/datasets/edge_gnn_datas/tokenizer'
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False, do_lower_case=False, do_basic_tokenize=False)
@@ -155,15 +149,15 @@ if __name__ == '__main__':
         add_pooling_layer=False,
         custom_config={'arch_num':3}
     )
-    device = torch.device('cuda:3')
+    device = torch.device('cuda:0')
     max_seq_len = 512
 
     dataset = FinetuneDataset(data, encode_model, device, tokenizer, max_seq_len)
 
     data_list = dataset.get_data_list()
 
-    save_path = '/home/liu/bcsd/datasets/edge_gnn_datas/finetune_triple_tensor_5w.pkl'
+    save_path = '/home/liu/bcsd/datasets/edge_gnn_datas/finetune_triple_tensor_sample1.pkl'
     with open(save_path, 'wb') as f:
         pickle.dump(data_list, f)   
     
-
+    print('debug')

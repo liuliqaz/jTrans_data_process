@@ -396,7 +396,8 @@ def process_and_gather_data_triple(data_dir, outpur_dir, pkl_name, is_random=Fal
             all_sim_pairs = list(itertools.combinations(func_opt_dict.keys(), 2))
             if is_random:
                 # minst opt pairs dataset
-                all_sim_pairs = get_most_unlike_opt(func_opt_dict.keys())
+                # all_sim_pairs = get_most_unlike_opt(func_opt_dict.keys())
+                all_sim_pairs = random.sample(all_sim_pairs, 1)
 
             for sim_pair in all_sim_pairs:
                 choice_idx = random.choice([0,1])
@@ -587,19 +588,19 @@ if __name__ == '__main__':
     # input_path = '/home/liu/project/ida_script/extract'
     # output_path = './data'
 
-    triple_name ='finetune_triple_max50_min1_full_without_clang64.pkl'
+    triple_name ='finetune_triple_max50_min1_full_sample1.pkl'
     # pair_name= 'finetune_pair_max100.pkl'
 
-    # process_and_gather_data_triple(input_path, output_path, triple_name, False)
+    process_and_gather_data_triple(input_path, output_path, triple_name, True)
     # process_and_gather_data_pair(input_path, output_path, pair_name, False)
 
     data_path = os.path.join(output_path, triple_name)
     # data_triple = load_pickle(data_path)
     # data_pair = load_pickle(f'./data/{pair_name}')
 
-    sample_path = os.path.join(output_path, 'finetune_triple_max50_min1_1M_without_clang64.pkl')
+    # sample_path = os.path.join(output_path, 'finetune_triple_max50_min1_1M_without_clang64.pkl')
     # sample_dataset(data_triple, SAMPLE_NUM, sample_path)
     
-    small_data_triple = load_pickle('./data/finetune_triple_max100.pkl')
+    # small_data_triple = load_pickle('./data/finetune_triple_max100.pkl')
 
     print('done')
