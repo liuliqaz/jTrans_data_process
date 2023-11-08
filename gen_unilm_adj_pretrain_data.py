@@ -6,8 +6,20 @@ from tqdm import tqdm
 import random
 import numpy as np
 import math
+from collections import deque
 
-MAX_LOOP_TIME = 100
+
+MIN_NODE_LEN = 2
+MAX_NODE_LEN = 50
+MAX_EDGE_LEN = 100
+
+SAMPLE_NUM = 1000000
+
+FILTER_CLANG = False
+FILTER_64 = False
+
+node_cnt_x = 0
+edge_cnt_x = 0
 
 
 def load_pickle(file):
@@ -50,40 +62,6 @@ def is_hexadecimal(s):
         return True
     except ValueError:
         return False
-
-
-def calculate_levenshtein_distance(text1, text2):
-    m, n = len(text1), len(text2)
-    dp = np.zeros((m + 1, n + 1))
-
-    for i in range(m + 1):
-        dp[i][0] = i
-    for j in range(n + 1):
-        dp[0][j] = j
-
-    for i in range(1, m + 1):
-        for j in range(1, n + 1):
-            if text1[i - 1] == text2[j - 1]:
-                dp[i][j] = dp[i - 1][j - 1]
-            else:
-                dp[i][j] = min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]) + 1
-
-    return dp[m][n]
-
-
-def get_rand_unsim_opt(target_opt, opt_list):
-    rand_opt_list = opt_list.copy()
-    unsim_opt = ""
-    for opt in rand_opt_list:
-        if opt == target_opt:
-            continue
-        if calculate_levenshtein_distance(target_opt, opt) >= 5:
-            unsim_opt = opt
-            break
-        unsim_opt = opt
-    if unsim_opt == '':
-        print('debug')
-    return unsim_opt
 
 
 def get_arch_emb(arch):
@@ -234,6 +212,13 @@ def process_asm(arch, func_dict, dyn_func_list, binary_name):
         node_list = func_data['nodes']
         basic_blocks = func_data['basic_blocks']
 
+        if len(node_list) > MAX_NODE_LEN or len(node_list) < MIN_NODE_LEN:
+            global node_cnt_x
+            node_cnt_x += 1
+            continue
+
+        node_list.sort()
+
         if func_name in dyn_func_list:
             continue
         
@@ -292,23 +277,35 @@ def gather_pkl_file_name(data_dir):
     return proj_bin_dict, pkl_file_len
 
 
-def process_and_gather_data(data_dir, outpur_dir):
+def process_and_gather_unilm_adj_pretrain_data(data_dir, outpur_dir, pkl_name):
     # get all file dict {proj_bin:[(file_name, arch_opt)]}
     proj_bin_dict, total_len = gather_pkl_file_name(data_dir)
 
     progress_bar = tqdm(range(total_len))
 
-    save_path = outpur_dir
-    res_dict = {} 
+    res_list = []
+    save_path = os.path.join(outpur_dir, pkl_name)
 
     for proj_bin, file_tuple_list in proj_bin_dict.items():
-
+        # save_file_name = os.path.join(outpur_dir, f'{proj_bin}_index.pkl')
+        
+        proj_bin_func_set = set()   # save common function name
         proj_bin_opt_dict = dict()  # save {func_name:{opt1:{info}, opt2:{info}}}
 
         # traverse every arch_opt
         for file_tuple in file_tuple_list:
             file_name = file_tuple[0]
             arch_opt = file_tuple[1]
+
+            # remove compiler clang to reduce dataset size
+            if FILTER_CLANG and arch_opt.split('_')[0] == 'clang':
+                progress_bar.update(1)
+                continue
+
+            # remove 64bit to reduce dataset size
+            if FILTER_64 and arch_opt.split('_')[-2] == '64':
+                progress_bar.update(1)
+                continue
 
             binary_name = '_'.join(file_name[:-4].split('_')[:-1])
 
@@ -322,42 +319,104 @@ def process_and_gather_data(data_dir, outpur_dir):
             pickle_data[binary_name]['func_map'] = func_map
 
             for func_name, func_addr in func_map.items():
+                # debug use, count node and edge > 160 funcs
+                if len(func_dict[func_addr]['nodes']) > MAX_NODE_LEN or len(func_dict[func_addr]['nodes']) < MIN_NODE_LEN:
+                    global node_cnt_x
+                    node_cnt_x += 1
+                    continue
+                
+                block_list = func_dict[func_addr]['nodes']
+                edge_list = func_dict[func_addr]['edges']
+
+                adj_matrix = gen_adj_matrix(edge_list, len(block_list))
+                merge_input, block_index = get_input(block_list)
+
+                depth_list = cal_node_depth(adj_matrix, 0)
+                in_degrees, out_degrees = cal_degree(adj_matrix)
+
                 opt_map = {
-                    'edges': func_dict[func_addr]['edges'],
-                    'nodes': func_dict[func_addr]['nodes'],
-                    'arch':  get_arch_emb(arch_opt),
+                    'input': merge_input,
+                    'block_index': block_index,
+                    'adj_matrix': adj_matrix,
+                    'depth_list': depth_list,
+                    'in_degrees': in_degrees,
+                    'out_degrees': out_degrees,
+                    'arch': get_arch_emb(arch_opt)
                 }
-                if f'{proj_bin}_{func_name}' not in res_dict:
-                    res_dict[f'{proj_bin}_{func_name}'] = {arch_opt: opt_map}
+
+                if func_name not in proj_bin_opt_dict:
+                    proj_bin_opt_dict[func_name] = {arch_opt: opt_map}
                 else:    
-                    res_dict[f'{proj_bin}_{func_name}'][arch_opt] = opt_map
+                    proj_bin_opt_dict[func_name][arch_opt] = opt_map
+
+                res_list.append(opt_map)
+
+            if len(proj_bin_func_set) == 0:
+                proj_bin_func_set.update(func_map.keys())
+            else:
+                proj_bin_func_set &= set(func_map.keys())
             
             progress_bar.update(1)
 
     with open(save_path, 'wb') as f:
-        pickle.dump(res_dict, f)                    
+        pickle.dump(res_list, f)                    
 
 
-def filter_eval_data(data):
-    final_bin_func_list = []
-    final_bin_func_dict = {}
+def sample_dataset(datalist, sample_num, save_path):
+    sample_list = random.sample(datalist, sample_num)
+    with open(save_path, 'wb') as f:
+        pickle.dump(sample_list, f)
+
+
+def cal_degree(adj_matrix):
+    in_degrees = np.sum(np.array(adj_matrix), axis=0)
+    out_degrees = np.sum(np.array(adj_matrix), axis=1)
+    # d_center = degrees / (len(degrees) - 1)
+    # d_center_l = d_center.tolist()
+    return in_degrees.tolist(), out_degrees.tolist()
+
+
+def cal_node_depth(matrix, start):
+    num_nodes = len(matrix)
+    distances = [-1] * num_nodes  # 初始化距离数组，-1表示不可达
+    distances[start] = 0
+
+    queue = deque()
+    queue.append(start)
+
+    while queue:
+        node = queue.popleft()
+        for neighbor in range(num_nodes):
+            if matrix[node][neighbor] == 1 and distances[neighbor] == -1:
+                distances[neighbor] = distances[node] + 1
+                queue.append(neighbor)
     
-    for bin_func, opt_dict in data.items():
-        valid_cnt = 0
-        for _, func_dict in opt_dict.items():
-            if len(func_dict['nodes']) > 1 and len(func_dict['nodes']) <= 50:
-                valid_cnt += 1
+    return distances
 
-        if valid_cnt == 72:
-            final_bin_func_list.append(bin_func)
-            final_bin_func_dict[bin_func] = opt_dict
+
+def gen_adj_matrix(edge_list, node_len):
+    adj_matrix = [[0]*node_len for _ in range(node_len)]
+    for edge in edge_list:
+        adj_matrix[edge[0]][edge[1]] = 1
     
-    return final_bin_func_list, final_bin_func_dict
+    return adj_matrix
+
+
+def get_input(block_list):
+    merge_input = []
+    block_index = []
+    for block in block_list:
+        start_idx = len(merge_input)
+        merge_input.extend(block.split())
+        end_idx = len(merge_input)-1
+        block_index.append((start_idx, end_idx))
+
+    return merge_input, block_index
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="gather project, bin_file, functions & generate evaluate data.")
-    parser.add_argument("--input_path", type=str, default='/home/liu/bcsd/test_set_extract_v2')
+    parser = argparse.ArgumentParser(description="gather project, bin_file, functions & generate finetune data.")
+    parser.add_argument("--input_path", type=str, default='/home/liu/bcsd/train_set_extract_v2')
     parser.add_argument("--output_path", type=str, default='/home/liu/bcsd/datasets/edge_gnn_datas/')
     args = parser.parse_args()
 
@@ -366,24 +425,18 @@ if __name__ == '__main__':
 
     # test use
     # input_path = '/home/liu/project/ida_script/extract'
-    # output_path = './data'
+    output_path = './data'
 
-    # save_path = os.path.join(output_path, 'eval_func_list.pkl')
+    triple_name ='unilm_pretrain_max50_min1_full.pkl'
+
+    # process_and_gather_unilm_adj_pretrain_data(input_path, output_path, triple_name)
+
+    data_path = os.path.join(output_path, triple_name)
+    data_triple = load_pickle(data_path)
+
+    # sample_path = os.path.join(output_path, 'finetune_triple_max50_min1_1M_without_clang64.pkl')
+    # sample_dataset(data_triple, SAMPLE_NUM, sample_path)
     
-    # process_and_gather_data(input_path, save_path)
-
-    data = load_pickle('./data/eval_func_list_node_1_50_tensor.pkl')
-
-    illegal_cnt = 0
-    for bin_func, opt_dict in data.items():
-        for opt, func_dict in opt_dict.items():
-            if len(func_dict['edges_embedding']) != len(func_dict['edges']):
-                len1 = len(func_dict['edges'])
-                len2 = len(func_dict['edges_embedding'])
-                print(f'[!]{bin_func} opt:{opt} len(edge){len1} len(e_emb){len2}')
-                illegal_cnt += 1
-
-    # l, d = filter_eval_data(data)
+    # small_data_triple = load_pickle('./data/finetune_triple_max100.pkl')
 
     print('done')
-
