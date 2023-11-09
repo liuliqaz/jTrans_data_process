@@ -219,6 +219,10 @@ def process_asm(arch, func_dict, dyn_func_list, binary_name):
 
         node_list.sort()
 
+        func_addr_int = int(func_addr, 16)
+        while node_list[0] != func_addr_int:
+            node_list.insert(len(node_list)-1, node_list.pop(0))
+
         if func_name in dyn_func_list:
             continue
         
@@ -334,8 +338,11 @@ def process_and_gather_unilm_adj_pretrain_data(data_dir, outpur_dir, pkl_name):
                 depth_list = cal_node_depth(adj_matrix, 0)
                 in_degrees, out_degrees = cal_degree(adj_matrix)
 
+                if -1 in depth_list:
+                    continue
+
                 opt_map = {
-                    'input': merge_input,
+                    'input': ' '.join(merge_input),
                     'block_index': block_index,
                     'adj_matrix': adj_matrix,
                     'depth_list': depth_list,
@@ -425,14 +432,22 @@ if __name__ == '__main__':
 
     # test use
     # input_path = '/home/liu/project/ida_script/extract'
-    output_path = './data'
+    # output_path = './data'
 
-    triple_name ='unilm_pretrain_max50_min1_full.pkl'
+    triple_name ='unilm_pretrain_max50_min1_full_fix.pkl'
 
-    # process_and_gather_unilm_adj_pretrain_data(input_path, output_path, triple_name)
+    process_and_gather_unilm_adj_pretrain_data(input_path, output_path, triple_name)
 
-    data_path = os.path.join(output_path, triple_name)
-    data_triple = load_pickle(data_path)
+    # data_path = os.path.join(output_path, triple_name)
+    # data_triple = load_pickle(data_path)
+
+    # cnt = 0
+    # for i in data_triple:
+    #     depth = i['depth_list']
+    #     if -1 in depth:
+    #         print('err')
+    #         cnt += 1
+
 
     # sample_path = os.path.join(output_path, 'finetune_triple_max50_min1_1M_without_clang64.pkl')
     # sample_dataset(data_triple, SAMPLE_NUM, sample_path)
