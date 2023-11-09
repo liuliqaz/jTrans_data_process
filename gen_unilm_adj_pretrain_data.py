@@ -248,11 +248,15 @@ def process_asm(arch, func_dict, dyn_func_list, binary_name):
         tmp_node_id_dict = {}
         # new_node_list has same index as node_list
         for idx, node in enumerate(node_list):
+            if len(asm_dict[node]) == 0:
+                continue
+            tmp_node_id_dict[node] = len(new_node_list)
             new_node_list.append(' '.join(asm_dict[node]))
-            tmp_node_id_dict[node] = idx
+
         # use index of new node list present edge
         for edge in edge_list:
-            new_edge_list.append((tmp_node_id_dict[edge[0]], tmp_node_id_dict[edge[1]]))
+            if edge[0] in tmp_node_id_dict and edge[1] in tmp_node_id_dict:
+                new_edge_list.append((tmp_node_id_dict[edge[0]], tmp_node_id_dict[edge[1]]))
         
         func_dict[func_addr]['edges'] = new_edge_list
         func_dict[func_addr]['nodes'] = new_node_list
@@ -434,7 +438,7 @@ if __name__ == '__main__':
     # input_path = '/home/liu/project/ida_script/extract'
     # output_path = './data'
 
-    triple_name ='unilm_pretrain_max50_min1_full_fix.pkl'
+    triple_name ='unilm_pretrain_max50_min1_full_fix_new.pkl'
 
     process_and_gather_unilm_adj_pretrain_data(input_path, output_path, triple_name)
 
@@ -443,10 +447,11 @@ if __name__ == '__main__':
 
     # cnt = 0
     # for i in data_triple:
-    #     depth = i['depth_list']
-    #     if -1 in depth:
-    #         print('err')
-    #         cnt += 1
+    #     block_index = i['block_index']
+    #     for dd in block_index:
+    #         if dd[0] > dd[1]:
+    #             print('err')
+    #             cnt += 1
 
 
     # sample_path = os.path.join(output_path, 'finetune_triple_max50_min1_1M_without_clang64.pkl')
